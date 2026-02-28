@@ -7,6 +7,7 @@ require('dotenv').config();
 const { sequelize, ensureDatabase } = require('./database/config');
 require('./models');
 const { seedDatabase } = require('./database/seed');
+const { ensureDefaultCredentials } = require('./data/admin-credentials');
 
 const { setupGameSocket } = require('./sockets/gameHandler');
 const { setupChatSocket } = require('./sockets/chatHandler');
@@ -62,6 +63,8 @@ async function startServer() {
     console.log('Tablolar senkronize edildi.');
 
     await seedDatabase();
+
+    ensureDefaultCredentials();
 
     server.listen(PORT, () => {
       console.log(`Server ${PORT} portunda çalışıyor`);

@@ -11,6 +11,7 @@ const { createNotification, getNotifications, getUnreadCount, markRead, markAllR
 const QuestionReportModel = require('../models/QuestionReport');
 const QuestionModel = require('../models/Question');
 const UserCosmeticModel = require('../models/UserCosmetic');
+const CosmeticFrameModel = require('../models/CosmeticFrame');
 const PurchaseHistoryModel = require('../models/PurchaseHistory');
 const ShopItemModel = require('../models/ShopItem');
 const { isChatBanned } = require('../game/chatBan');
@@ -1007,8 +1008,15 @@ function setupGameSocket(io) {
         const achievements = await Achievement.findAll({ where: { userId: user.id } });
         const achKeys = achievements.map((a) => a.achievementKey);
 
-        const allFrames = COSMETICS.frames.map((f) => ({
+        let framesList = await CosmeticFrameModel.findAll({ order: [['sortOrder', 'ASC'], ['id', 'ASC']] });
+        if (!framesList || framesList.length === 0) {
+          framesList = COSMETICS.frames.map((f) => ({ key: f.key, name: f.name, unlockLevel: f.unlockLevel, colors: f.colors || [], style: 'gradient', sortOrder: 0 }));
+        } else {
+          framesList = framesList.map((f) => ({ key: f.key, name: f.name, unlockLevel: f.unlockLevel, colors: f.colors || [], style: f.style || 'gradient' }));
+        }
+        const allFrames = framesList.map((f) => ({
           ...f,
+          type: 'frame',
           unlocked: user.level >= f.unlockLevel,
           owned: ownedKeys.includes(f.key),
           active: user.activeFrame === f.key,
@@ -1039,9 +1047,13 @@ function setupGameSocket(io) {
           return;
         }
 
-        const template = cosmeticType === 'frame'
-          ? COSMETICS.frames.find((f) => f.key === cosmeticKey)
-          : COSMETICS.badges.find((b) => b.key === cosmeticKey);
+        let template;
+        if (cosmeticType === 'frame') {
+          const dbFrame = await CosmeticFrameModel.findOne({ where: { key: cosmeticKey } });
+          template = dbFrame ? { key: dbFrame.key, unlockLevel: dbFrame.unlockLevel } : COSMETICS.frames.find((f) => f.key === cosmeticKey);
+        } else {
+          template = COSMETICS.badges.find((b) => b.key === cosmeticKey);
+        }
         if (!template) { socket.emit('cosmetic_updated', { success: false, error: 'Kozmetik bulunamadı' }); return; }
 
         const unlocked = cosmeticType === 'frame'

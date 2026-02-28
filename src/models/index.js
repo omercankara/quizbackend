@@ -18,6 +18,7 @@ const PurchaseHistory = require('./PurchaseHistory');
 const ChatBan = require('./ChatBan');
 const ShopItem = require('./ShopItem');
 const QuestTemplate = require('./QuestTemplate');
+const CosmeticFrame = require('./CosmeticFrame');
 
 // Relations
 Match.belongsTo(User, { as: 'winner', foreignKey: 'winnerId' });
@@ -78,4 +79,5 @@ module.exports = {
   ChatBan,
   ShopItem,
   QuestTemplate,
+  CosmeticFrame,
 };

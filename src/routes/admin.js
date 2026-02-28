@@ -11,10 +11,10 @@ const Match = require('../models/Match');
 const MatchPlayer = require('../models/MatchPlayer');
 const Achievement = require('../models/Achievement');
 const ChatMessage = require('../models/ChatMessage');
+const CosmeticFrame = require('../models/CosmeticFrame');
+const { getCredentials, setCredentials, ensureDefaultCredentials } = require('../data/admin-credentials');
 
 const ADMIN_SECRET = process.env.ADMIN_JWT_SECRET || 'quiz-arena-admin-secret-change-in-production';
-const ADMIN_USER = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin123';
 
 function adminAuth(req, res, next) {
   const auth = req.headers.authorization;
@@ -36,7 +36,8 @@ router.post('/login', (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Kullanıcı adı ve şifre gerekli' });
   }
-  if (username !== ADMIN_USER || password !== ADMIN_PASS) {
+  const cred = getCredentials();
+  if (username !== cred.username || password !== cred.password) {
     return res.status(401).json({ error: 'Kullanıcı adı veya şifre hatalı' });
   }
   const token = jwt.sign(
@@ -48,6 +49,22 @@ router.post('/login', (req, res) => {
 });
 
 router.use(adminAuth);
+
+// ── ADMIN HESAP AYARLARI (giriş yapmış admin kullanıcı adı/şifre değiştirebilir) ──
+router.get('/credentials', (req, res) => {
+  const cred = getCredentials();
+  res.json({ username: cred.username });
+});
+
+router.put('/credentials', (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const result = setCredentials(username, password);
+    res.json({ success: true, username: result.username, message: 'Admin hesabı güncellendi. Yeni bilgilerle tekrar giriş yapın.' });
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Güncellenemedi' });
+  }
+});
 
 // ── QUESTIONS ──
 router.get('/questions', async (req, res) => {
@@ -696,6 +713,64 @@ router.post('/quest-templates/reset', async (req, res) => {
 });
 
 // ── TEST: Kullanıcı görevlerini tamamla (ödül alınabilir hale getir)
+// ── COSMETIC FRAMES (Çerçeveler) ──
+router.get('/frames', async (req, res) => {
+  try {
+    const frames = await CosmeticFrame.findAll({ order: [['sortOrder', 'ASC'], ['id', 'ASC']] });
+    res.json({ frames: frames.map((f) => ({ id: f.id, key: f.key, name: f.name, unlockLevel: f.unlockLevel, colors: f.colors || [], style: f.style || 'gradient', sortOrder: f.sortOrder })) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/frames', async (req, res) => {
+  try {
+    const { key, name, unlockLevel, colors, style, sortOrder } = req.body;
+    if (!key || !name) return res.status(400).json({ error: 'Anahtar ve ad gerekli' });
+    const colorsArr = Array.isArray(colors) ? colors : (typeof colors === 'string' ? colors.split(',').map((c) => c.trim()).filter(Boolean) : ['#7C4DFF', '#00E5FF']);
+    const frame = await CosmeticFrame.create({
+      key: key.trim(),
+      name: name.trim(),
+      unlockLevel: parseInt(unlockLevel, 10) || 1,
+      colors: colorsArr,
+      style: (style || 'gradient').trim(),
+      sortOrder: parseInt(sortOrder, 10) || 0,
+    });
+    res.json({ success: true, frame: { id: frame.id, key: frame.key, name: frame.name, unlockLevel: frame.unlockLevel, colors: frame.colors, style: frame.style, sortOrder: frame.sortOrder } });
+  } catch (e) {
+    if (e.name === 'SequelizeUniqueConstraintError') return res.status(400).json({ error: 'Bu anahtar zaten kullanılıyor' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/frames/:key', async (req, res) => {
+  try {
+    const frame = await CosmeticFrame.findOne({ where: { key: req.params.key } });
+    if (!frame) return res.status(404).json({ error: 'Çerçeve bulunamadı' });
+    const { name, unlockLevel, colors, style, sortOrder } = req.body;
+    if (name !== undefined) frame.name = name.trim();
+    if (unlockLevel !== undefined) frame.unlockLevel = parseInt(unlockLevel, 10) || 1;
+    if (colors !== undefined) frame.colors = Array.isArray(colors) ? colors : (typeof colors === 'string' ? colors.split(',').map((c) => c.trim()).filter(Boolean) : frame.colors);
+    if (style !== undefined) frame.style = (style || 'gradient').trim();
+    if (sortOrder !== undefined) frame.sortOrder = parseInt(sortOrder, 10) || 0;
+    await frame.save();
+    res.json({ success: true, frame: { id: frame.id, key: frame.key, name: frame.name, unlockLevel: frame.unlockLevel, colors: frame.colors, style: frame.style, sortOrder: frame.sortOrder } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/frames/:key', async (req, res) => {
+  try {
+    const frame = await CosmeticFrame.findOne({ where: { key: req.params.key } });
+    if (!frame) return res.status(404).json({ error: 'Çerçeve bulunamadı' });
+    await frame.destroy();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/test/complete-user-quests', async (req, res) => {
   try {
     const { username } = req.body;

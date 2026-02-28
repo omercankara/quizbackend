@@ -1,4 +1,4 @@
-const { Question, ShopItem, QuestTemplate, Season } = require('../models');
+const { Question, ShopItem, QuestTemplate, Season, CosmeticFrame } = require('../models');
 
 const seedQuestions = [
   // ─── GENERAL EASY ───
@@ -174,6 +174,14 @@ const defaultSeasons = (() => {
   });
 })();
 
+const defaultFrames = [
+  { key: 'frame_bronze', name: 'Bronz Çerçeve', unlockLevel: 5, colors: ['#CD7F32', '#8B5E3C'], style: 'gradient', sortOrder: 1 },
+  { key: 'frame_silver', name: 'Gümüş Çerçeve', unlockLevel: 10, colors: ['#C0C0C0', '#808080'], style: 'gradient', sortOrder: 2 },
+  { key: 'frame_gold', name: 'Altın Çerçeve', unlockLevel: 15, colors: ['#FFD700', '#FFA000'], style: 'gradient', sortOrder: 3 },
+  { key: 'frame_diamond', name: 'Elmas Çerçeve', unlockLevel: 20, colors: ['#00E5FF', '#7C4DFF'], style: 'glow', sortOrder: 4 },
+  { key: 'frame_legendary', name: 'Efsanevi Çerçeve', unlockLevel: 30, colors: ['#FF6D00', '#FF1744'], style: 'gradient', sortOrder: 5 },
+];
+
 const defaultShopItems = [
   { itemKey: 'fifty_fifty', name: '%50 Eleme', description: '2 yanlış şıkkı eler', price: 80, userField: 'ownedFiftyFifty' },
   { itemKey: 'time_freeze', name: 'Ek Süre', description: '+10 saniye ekstra süre', price: 60, userField: 'ownedTimeFreeze' },
@@ -210,6 +218,13 @@ async function seedDatabase() {
     await Season.bulkCreate(defaultSeasons.map((s) => ({ ...s, isActive: s.isActive })));
     console.log(`${defaultSeasons.length} sezon eklendi.`);
   }
+
+  const frameCount = await CosmeticFrame.count();
+  if (frameCount === 0) {
+    console.log('Çerçeveler yazılıyor...');
+    await CosmeticFrame.bulkCreate(defaultFrames);
+    console.log(`${defaultFrames.length} çerçeve eklendi.`);
+  }
 }
 
-module.exports = { seedDatabase, defaultQuestTemplates, defaultShopItems, defaultSeasons };
+module.exports = { seedDatabase, defaultQuestTemplates, defaultShopItems, defaultSeasons, defaultFrames };
