@@ -1,6 +1,7 @@
 const SeasonModel = require('../models/Season');
 const SeasonProgressModel = require('../models/SeasonProgress');
 const UserModel = require('../models/User');
+const { sequelize } = require('../database/config');
 const { createNotification } = require('./notifications');
 
 const XP_PER_TIER = 200;
@@ -104,34 +105,62 @@ async function getSeasonInfo(oduserId) {
 }
 
 async function claimSeasonReward(oduserId, tier) {
+  const reward = SEASON_REWARDS.find((r) => r.tier === tier);
+  if (!reward) return { success: false, error: 'Geçersiz ödül', tier: tier ?? null };
+
   const season = await ensureActiveSeason();
   const user = await UserModel.findOne({ where: { oduserId } });
-  if (!user) return null;
+  if (!user) return { success: false, error: 'Kullanıcı bulunamadı', tier: null };
 
-  const progress = await getOrCreateProgress(oduserId, season.id);
-  if (!progress || progress.tier < tier) return { success: false, error: 'Henüz bu tier seviyesine ulaşmadınız' };
+  try {
+    return await sequelize.transaction(async (t) => {
+      let row = await SeasonProgressModel.findOne({
+        where: { userId: user.id, seasonId: season.id },
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!row) {
+        await SeasonProgressModel.create({
+          userId: user.id,
+          seasonId: season.id,
+          seasonXp: 0,
+          tier: 1,
+          claimedRewards: [],
+        }, { transaction: t });
+        row = await SeasonProgressModel.findOne({
+          where: { userId: user.id, seasonId: season.id },
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+      }
+      if (!row) return { success: false, error: 'İlerleme bulunamadı', tier };
+      if (row.tier < tier) return { success: false, error: 'Henüz bu tier seviyesine ulaşmadınız', tier: row.tier };
 
-  const claimed = progress.claimedRewards || [];
-  if (claimed.includes(tier)) return { success: false, error: 'Bu ödül zaten alınmış' };
+      const claimed = Array.isArray(row.claimedRewards) ? [...row.claimedRewards] : [];
+      if (claimed.includes(tier)) return { success: false, error: 'Bu ödül zaten alınmış', tier: row.tier };
 
-  const reward = SEASON_REWARDS.find((r) => r.tier === tier);
-  if (!reward) return { success: false, error: 'Geçersiz ödül' };
+      claimed.push(tier);
+      row.claimedRewards = claimed;
+      await row.save({ transaction: t });
 
-  claimed.push(tier);
-  progress.claimedRewards = claimed;
-  await progress.save();
+      if (reward.type === 'xp') {
+        const u = await UserModel.findOne({ where: { id: user.id }, transaction: t, lock: t.LOCK.UPDATE });
+        if (u) {
+          u.xp = (u.xp || 0) + reward.value;
+          const { calculateXpForLevel } = require('./leaderboard');
+          while (u.xp >= calculateXpForLevel(u.level)) {
+            u.xp -= calculateXpForLevel(u.level);
+            u.level += 1;
+          }
+          await u.save({ transaction: t });
+        }
+      }
 
-  if (reward.type === 'xp') {
-    user.xp += reward.value;
-    const { calculateXpForLevel } = require('./leaderboard');
-    while (user.xp >= calculateXpForLevel(user.level)) {
-      user.xp -= calculateXpForLevel(user.level);
-      user.level += 1;
-    }
-    await user.save();
+      return { success: true, reward, tier: row.tier };
+    });
+  } catch (err) {
+    return { success: false, error: err?.message || 'Ödül alınamadı', tier: null };
   }
-
-  return { success: true, reward };
 }
 
 module.exports = { ensureActiveSeason, addSeasonXp, getSeasonInfo, claimSeasonReward, SEASON_REWARDS };
