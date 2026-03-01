@@ -54,9 +54,23 @@ router.post('/login', (req, res) => {
 router.use(adminAuth);
 
 // ── ONLINE KULLANICILAR ──
-router.get('/online-users', (req, res) => {
-  const users = getOnlineUsers();
-  res.json({ users, count: users.length });
+router.get('/online-users', async (req, res) => {
+  try {
+    const users = getOnlineUsers();
+    const oduserIds = users.map((u) => u.userId).filter(Boolean);
+    const dbUsers = oduserIds.length > 0
+      ? await User.findAll({ where: { oduserId: oduserIds }, attributes: ['id', 'oduserId', 'avatar', 'rating', 'level'] })
+      : [];
+    const dbMap = new Map(dbUsers.map((u) => [u.oduserId, u]));
+    const enriched = users.map((u) => {
+      const db = dbMap.get(u.userId);
+      return { ...u, dbId: db?.id, avatar: db?.avatar, rating: db?.rating, level: db?.level };
+    });
+    res.json({ users: enriched, count: enriched.length });
+  } catch (e) {
+    console.error('Online users error:', e.message);
+    res.json({ users: getOnlineUsers(), count: getOnlineUsers().length });
+  }
 });
 
 // ── ADMIN HESAP AYARLARI (giriş yapmış admin kullanıcı adı/şifre değiştirebilir) ──
@@ -349,6 +363,149 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
+// ── KULLANICI DETAYLI LOGLAR (veriler, mesajlar, tüm aktivite) ──
+const DirectMessage = require('../models/DirectMessage');
+const PurchaseHistory = require('../models/PurchaseHistory');
+const Quest = require('../models/Quest');
+const QuestionReport = require('../models/QuestionReport');
+const Question = require('../models/Question');
+
+router.get('/users/:id/activity-logs', async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+    const limit = 200;
+    const oduserId = user.oduserId;
+
+    const [
+      achievements,
+      matchPlayers,
+      chatMessages,
+      directMessagesSent,
+      directMessagesReceived,
+      purchases,
+      quests,
+      questionReports,
+    ] = await Promise.all([
+      Achievement.findAll({ where: { userId: user.id }, attributes: ['achievementKey'] }),
+      MatchPlayer.findAll({
+        where: { userId: user.id },
+        include: [{ model: Match }],
+        order: [[Match, 'createdAt', 'DESC']],
+        limit: 50,
+      }),
+      ChatMessage.findAll({
+        where: { oduserId },
+        order: [['createdAt', 'DESC']],
+        limit,
+      }),
+      DirectMessage.findAll({
+        where: { fromUserId: oduserId },
+        order: [['createdAt', 'DESC']],
+        limit: 100,
+      }),
+      DirectMessage.findAll({
+        where: { toUserId: oduserId },
+        order: [['createdAt', 'DESC']],
+        limit: 100,
+      }),
+      PurchaseHistory.findAll({
+        where: { userId: user.id },
+        order: [['createdAt', 'DESC']],
+        limit,
+      }),
+      Quest.findAll({
+        where: { userId: user.id },
+        order: [['createdAt', 'DESC']],
+        limit,
+      }),
+      QuestionReport.findAll({
+        where: { userId: user.id },
+        include: [{ model: Question, attributes: ['text', 'questionKey'] }],
+        order: [['createdAt', 'DESC']],
+        limit: 50,
+      }),
+    ]);
+
+    const matchHistory = matchPlayers.map((mp) => {
+      const m = mp.Match;
+      return {
+        matchId: m.id,
+        matchKey: m.matchKey,
+        mode: m.mode,
+        difficulty: m.difficulty,
+        category: m.category,
+        score: mp.score,
+        correctCount: mp.correctCount,
+        won: m.winnerId === user.id,
+        draw: m.draw,
+        date: m.createdAt,
+      };
+    });
+
+    const directMessages = [
+      ...directMessagesSent.map((d) => ({ ...d.toJSON(), direction: 'out', to: d.toUserId, toName: d.toUsername })),
+      ...directMessagesReceived.map((d) => ({ ...d.toJSON(), direction: 'in', from: d.fromUserId, fromName: d.fromUsername })),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 200);
+
+    res.json({
+      user: {
+        id: user.id,
+        oduserId: user.oduserId,
+        username: user.username,
+        avatar: user.avatar,
+        bio: user.bio,
+        title: user.title,
+        rating: user.rating,
+        level: user.level,
+        levelTitle: getLevelTitle(user.level),
+        xp: user.xp,
+        wins: user.wins,
+        losses: user.losses,
+        draws: user.draws,
+        totalMatches: user.totalMatches,
+        totalCorrect: user.totalCorrect,
+        totalQuestions: user.totalQuestions,
+        streak: user.streak,
+        bestStreak: user.bestStreak,
+        coins: user.coins,
+        winRate: user.totalMatches > 0 ? Math.round((user.wins / user.totalMatches) * 100) : 0,
+        accuracy: user.totalQuestions > 0 ? Math.round((user.totalCorrect / user.totalQuestions) * 100) : 0,
+        createdAt: user.createdAt,
+      },
+      achievements: achievements.map((a) => a.achievementKey),
+      matchHistory,
+      chatMessages: chatMessages.map((m) => ({ id: m.id, room: m.room, text: m.text, date: m.createdAt })),
+      directMessages: directMessages.map((d) => ({
+        id: d.id,
+        direction: d.direction,
+        from: d.fromUserId,
+        fromName: d.fromUsername,
+        to: d.toUserId,
+        toName: d.toUsername,
+        text: d.text,
+        date: d.createdAt,
+      })),
+      purchases: purchases.map((p) => ({ id: p.id, itemKey: p.itemKey, itemName: p.itemName, price: p.price, quantity: p.quantity, date: p.createdAt })),
+      quests: quests.map((q) => ({ id: q.id, questKey: q.questKey, questType: q.questType, title: q.title, progress: q.progress, target: q.target, completed: q.completed, claimed: q.claimed, xpReward: q.xpReward, expiresAt: q.expiresAt, date: q.createdAt })),
+      questionReports: questionReports.map((r) => ({
+        id: r.id,
+        questionId: r.questionId,
+        questionText: r.Question?.text?.slice(0, 80),
+        questionKey: r.Question?.questionKey,
+        reason: r.reason,
+        description: r.description,
+        status: r.status,
+        date: r.createdAt,
+      })),
+    });
+  } catch (e) {
+    console.error('Activity logs error:', e.message);
+    res.status(500).json({ error: 'Sunucu hatası' });
+  }
+});
+
 // ── MATCHES ──
 router.get('/matches', async (req, res) => {
   try {
@@ -394,9 +551,6 @@ router.get('/matches', async (req, res) => {
 });
 
 // ── REPORTS ──
-const QuestionReport = require('../models/QuestionReport');
-const Question = require('../models/Question');
-
 router.get('/reports', async (req, res) => {
   try {
     const where = {};
