@@ -380,6 +380,7 @@ async function getLeaderboard(type = 'rating', limit = 20) {
   const users = await UserModel.findAll({ order, limit });
   return users.map((u, i) => ({
     rank: i + 1,
+    id: u.id,
     userId: u.oduserId,
     username: u.username,
     avatar: u.avatar,
