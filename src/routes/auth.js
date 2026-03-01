@@ -4,8 +4,8 @@ const { OAuth2Client } = require('google-auth-library');
 const router = express.Router();
 const User = require('../models/User');
 
-// Web client ID (app'teki webClientId ile aynı olmalı)
-const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID || '227946567742-af5oe1k2drh33d8qp9cocdgb4l6sfnmo.apps.googleusercontent.com';
+// Web client ID (Google Console > Web application - app ile aynı)
+const GOOGLE_WEB_CLIENT_ID = '227946567742-557ol0e3njaarbh6vfidub7l2r0s88qa.apps.googleusercontent.com';
 
 router.post('/register', async (req, res) => {
   try {
@@ -152,10 +152,13 @@ router.post('/google', async (req, res) => {
     });
   } catch (err) {
     console.error('Google auth error:', err.message);
+    console.error('Google auth full error:', err);
     if (err.message?.includes('Token used too late') || err.message?.includes('expired')) {
       return res.status(401).json({ error: 'Oturum süresi doldu, tekrar deneyin' });
     }
-    res.status(401).json({ error: 'Google ile giriş başarısız' });
+    // Audience mismatch = frontend/backend farklı client ID kullanıyor
+    const msg = err.message?.includes('audience') ? 'Client ID uyuşmazlığı (frontend/backend kontrol et)' : 'Google ile giriş başarısız';
+    res.status(401).json({ error: msg });
   }
 });
 
