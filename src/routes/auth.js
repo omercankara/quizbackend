@@ -4,7 +4,8 @@ const { OAuth2Client } = require('google-auth-library');
 const router = express.Router();
 const User = require('../models/User');
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '227946567742-sagbfodm5auhhg30outgc0469e7fm2ai.apps.googleusercontent.com';
+// Web client ID (app'teki webClientId ile aynı olmalı)
+const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID || '227946567742-af5oe1k2drh33d8qp9cocdgb4l6sfnmo.apps.googleusercontent.com';
 
 router.post('/register', async (req, res) => {
   try {
@@ -100,8 +101,8 @@ router.post('/google', async (req, res) => {
       return res.status(400).json({ error: 'Google token gerekli' });
     }
 
-    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
-    const ticket = await client.verifyIdToken({ idToken, audience: GOOGLE_CLIENT_ID });
+    const client = new OAuth2Client(GOOGLE_WEB_CLIENT_ID);
+    const ticket = await client.verifyIdToken({ idToken, audience: GOOGLE_WEB_CLIENT_ID });
     const payload = ticket.getPayload();
     const googleId = payload.sub;
     const email = payload.email || null;
