@@ -596,11 +596,8 @@ router.put('/reports/:id', async (req, res) => {
 });
 
 // ── ANALYTICS ──
-const DirectMessage = require('../models/DirectMessage');
 const Friend = require('../models/Friend');
 const FriendRequest = require('../models/FriendRequest');
-const PurchaseHistory = require('../models/PurchaseHistory');
-const Quest = require('../models/Quest');
 const Season = require('../models/Season');
 const ChatBan = require('../models/ChatBan');
 const ShopItem = require('../models/ShopItem');
