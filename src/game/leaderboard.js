@@ -192,30 +192,40 @@ async function recordMatchResult(oduserId, username, result) {
 
   await user.save();
 
-  // Save match to DB
+  // Save match to DB (findOrCreate: multiplayer'da aynı matchKey ile 2. oyuncu sadece MatchPlayer ekler)
   try {
-    const match = await MatchModel.create({
-      matchKey: result.matchKey || `m_${Date.now()}`,
-      difficulty: result.difficulty || 'easy',
-      category: result.category || 'all',
-      mode: result.mode || '1v1',
-      draw: result.draw || false,
-      status: 'finished',
+    const matchKey = result.matchKey || `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const validDiff = ['easy', 'medium', 'hard'].includes(result.difficulty) ? result.difficulty : 'easy';
+    const [match] = await MatchModel.findOrCreate({
+      where: { matchKey },
+      defaults: {
+        difficulty: validDiff,
+        category: result.category || 'all',
+        mode: result.mode || '1v1',
+        draw: result.draw || false,
+        status: 'finished',
+      },
     });
 
-    await MatchPlayerModel.create({
-      matchId: match.id,
-      userId: user.id,
-      score: result.myScore || 0,
-      correctCount: result.correctAnswers || 0,
+    const [matchPlayer, mpCreated] = await MatchPlayerModel.findOrCreate({
+      where: { matchId: match.id, userId: user.id },
+      defaults: {
+        score: result.myScore || 0,
+        correctCount: result.correctAnswers || 0,
+      },
     });
+    if (!mpCreated) {
+      matchPlayer.score = result.myScore || 0;
+      matchPlayer.correctCount = result.correctAnswers || 0;
+      await matchPlayer.save();
+    }
 
     if (result.won) {
       match.winnerId = user.id;
       await match.save();
     }
   } catch (e) {
-    console.error('Match kayıt hatası:', e.message);
+    console.error('Match kayıt hatası:', e.message, e.errors ? JSON.stringify(e.errors) : '');
   }
 
   // Update category stats

@@ -1133,7 +1133,7 @@ async function finishSolo(socket, soloState, userId, username) {
   socket.emit('solo_finished', { score: soloState.score, correctCount: soloState.correctCount, totalQuestions: soloState.questions.length });
   if (!userId || !username) return;
   await recordMatchResult(userId, username, {
-    matchKey: `solo_${Date.now()}`,
+    matchKey: `solo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     won: soloState.correctCount > soloState.questions.length / 2,
     draw: false,
     myScore: soloState.score,
@@ -1230,7 +1230,7 @@ async function finishSurvival(socket, state, reason) {
   socket.emit('survival_finished', { score: state.score, questionsAnswered: state.current, reason });
   if (state.userId) {
     await recordMatchResult(state.userId, state.username, {
-      matchKey: `surv_${Date.now()}`,
+      matchKey: `surv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       won: reason === 'completed',
       draw: false,
       myScore: state.score,
@@ -1239,7 +1239,7 @@ async function finishSurvival(socket, state, reason) {
       correctAnswers: Math.round(state.score / 15),
       totalQuestions: state.current,
       category: state.category || 'all',
-      difficulty: 'mixed',
+      difficulty: 'medium',
       mode: 'survival',
     });
   }
