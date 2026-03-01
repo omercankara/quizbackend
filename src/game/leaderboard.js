@@ -46,6 +46,44 @@ const ACHIEVEMENTS = [
   { id: 'no_abandon', name: 'Centilmen', desc: '50+ maç oyna, hiç terk etme', check: (p) => p.totalMatches >= 50 && (p.abandons || 0) === 0 },
 ];
 
+const ACHIEVEMENT_REWARDS = {
+  first_win: 'Rozet: İlk Zafer',
+  streak_5: 'Rozet: Seri Katil',
+  perfect: 'Rozet: Mükemmelci',
+  matches_50: 'Rozet: Veteran',
+  accuracy_80: 'Rozet: Keskin Nişancı',
+  matches_100: 'Rozet: Efsane',
+};
+
+function getAchievementsWithRewards() {
+  return ACHIEVEMENTS.map((a) => ({
+    id: a.id,
+    name: a.name,
+    desc: a.desc,
+    reward: ACHIEVEMENT_REWARDS[a.id] || '—',
+  }));
+}
+
+function getLevelTiers() {
+  const maxLevel = 55;
+  const tiers = [];
+  let levelMin = 1;
+  while (levelMin <= maxLevel) {
+    const title = getLevelTitle(levelMin);
+    let levelMax = levelMin;
+    while (levelMax < maxLevel && getLevelTitle(levelMax + 1) === title) levelMax++;
+    tiers.push({
+      levelMin,
+      levelMax,
+      levelRange: levelMin === levelMax ? String(levelMin) : `${levelMin}–${levelMax}`,
+      title,
+      xpToNext: levelMax < maxLevel ? calculateXpForLevel(levelMax) : null,
+    });
+    levelMin = levelMax + 1;
+  }
+  return tiers;
+}
+
 async function getOrCreatePlayer(oduserId, username) {
   let user = await UserModel.findOne({ where: { oduserId } });
   if (!user) {
@@ -416,4 +454,6 @@ module.exports = {
   getLevelTitle,
   calculateXpForLevel,
   ACHIEVEMENTS,
+  getAchievementsWithRewards,
+  getLevelTiers,
 };

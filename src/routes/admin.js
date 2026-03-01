@@ -5,7 +5,7 @@ const { sequelize } = require('../database/config');
 const router = express.Router();
 const { getAllQuestions, addQuestion, updateQuestion, deleteQuestion, CATEGORIES } = require('../data/questions');
 const QuestionModel = require('../models/Question');
-const { getLeaderboard, getLevelTitle } = require('../game/leaderboard');
+const { getLeaderboard, getLevelTitle, getAchievementsWithRewards, getLevelTiers } = require('../game/leaderboard');
 const User = require('../models/User');
 const Match = require('../models/Match');
 const MatchPlayer = require('../models/MatchPlayer');
@@ -36,6 +36,7 @@ router.post('/login', (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Kullanıcı adı ve şifre gerekli' });
   }
+  ensureDefaultCredentials();
   const cred = getCredentials();
   if (username !== cred.username || password !== cred.password) {
     return res.status(401).json({ error: 'Kullanıcı adı veya şifre hatalı' });
@@ -137,6 +138,18 @@ router.delete('/questions/:id', async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
   const type = req.query.type || 'rating';
   res.json({ leaderboard: await getLeaderboard(type) });
+});
+
+// ── BAŞARIMLAR & SEVİYE SİSTEMİ ──
+router.get('/achievements-and-levels', (req, res) => {
+  try {
+    res.json({
+      achievements: getAchievementsWithRewards(),
+      levelTiers: getLevelTiers(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── DASHBOARD ──

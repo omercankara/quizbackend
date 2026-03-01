@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 
 const router = express.Router();
+const { getAchievementsWithRewards, getLevelTiers } = require('../game/leaderboard');
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -33,6 +34,18 @@ const upload = multer({
   storage,
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+// GET achievements & level config (public - for app Başarımlar page)
+router.get('/achievements-config', (req, res) => {
+  try {
+    res.json({
+      achievements: getAchievementsWithRewards(),
+      levelTiers: getLevelTiers(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET profile
