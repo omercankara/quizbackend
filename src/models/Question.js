@@ -36,10 +36,14 @@ const Question = sequelize.define('Question', {
     type: DataTypes.STRING(255),
     allowNull: false,
   },
+  optionD: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
   correct: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    comment: '0=A, 1=B, 2=C',
+    comment: '0=A, 1=B, 2=C, 3=D',
   },
   hint: {
     type: DataTypes.STRING(500),

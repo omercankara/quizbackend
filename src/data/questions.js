@@ -11,11 +11,13 @@ const CATEGORIES = [
 ];
 
 function rowToQuestion(row) {
+  const opts = [row.optionA, row.optionB, row.optionC];
+  if (row.optionD) opts.push(row.optionD);
   return {
     id: row.questionKey,
     dbId: row.id,
     text: row.text,
-    options: [row.optionA, row.optionB, row.optionC],
+    options: opts,
     correct: row.correct,
     hint: row.hint || '',
     category: row.category,
@@ -33,13 +35,11 @@ async function getRandomQuestions(difficulty, count = 5, category = null) {
     limit: count,
   });
 
-  return rows.map((r) => ({
-    id: r.questionKey,
-    text: r.text,
-    options: [r.optionA, r.optionB, r.optionC],
-    correct: r.correct,
-    hint: r.hint || '',
-  }));
+  return rows.map((r) => {
+    const opts = [r.optionA, r.optionB, r.optionC];
+    if (r.optionD) opts.push(r.optionD);
+    return { id: r.questionKey, text: r.text, options: opts, correct: r.correct, hint: r.hint || '' };
+  });
 }
 
 async function checkAnswer(questionId, selectedOption) {
@@ -72,6 +72,7 @@ async function addQuestion(category, difficulty, questionData) {
     optionA: questionData.options[0],
     optionB: questionData.options[1],
     optionC: questionData.options[2],
+    optionD: questionData.options[3] || null,
     correct: questionData.correct,
     hint: questionData.hint || '',
   });
@@ -85,6 +86,7 @@ async function updateQuestion(questionId, updates) {
     row.optionA = updates.options[0];
     row.optionB = updates.options[1];
     row.optionC = updates.options[2];
+    row.optionD = updates.options[3] || null;
   }
   if (updates.correct !== undefined) row.correct = updates.correct;
   if (updates.hint !== undefined) row.hint = updates.hint;
