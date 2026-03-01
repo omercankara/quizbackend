@@ -216,6 +216,22 @@ async function seedDatabase() {
     console.log('Sorular veritabanına yazılıyor...');
     await Question.bulkCreate(seedQuestions);
     console.log(`${seedQuestions.length} soru başarıyla eklendi.`);
+  } else {
+    // Mevcut sorulara optionD ekle (4 şık migration)
+    const seedMap = Object.fromEntries(seedQuestions.filter((s) => s.optionD).map((s) => [s.questionKey, s.optionD]));
+    const rows = await Question.findAll({ where: { optionD: null } });
+    let updated = 0;
+    for (const row of rows) {
+      const optionD = seedMap[row.questionKey];
+      if (optionD) {
+        await row.update({ optionD });
+        updated++;
+      } else {
+        await row.update({ optionD: 'Hiçbiri' });
+        updated++;
+      }
+    }
+    if (updated > 0) console.log(`${updated} soruya 4. seçenek (D) eklendi.`);
   }
 
   const shopCount = await ShopItem.count();
