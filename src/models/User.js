@@ -41,6 +41,12 @@ const User = sequelize.define('User', {
     allowNull: true,
     defaultValue: null,
   },
+  googleId: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    unique: true,
+    defaultValue: null,
+  },
   favoriteCategory: {
     type: DataTypes.STRING(30),
     allowNull: true,
