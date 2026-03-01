@@ -217,19 +217,20 @@ async function seedDatabase() {
     await Question.bulkCreate(seedQuestions);
     console.log(`${seedQuestions.length} soru başarıyla eklendi.`);
   } else {
-    // Mevcut sorulara optionD ekle (4 şık migration)
+    // Mevcut sorulara optionD ekle (4 şık migration) - raw SQL ile
+    const { sequelize } = require('./config');
+    try {
+      await sequelize.query('ALTER TABLE questions ADD COLUMN optionD VARCHAR(255) NULL');
+    } catch (e) {
+      /* Sütun zaten varsa Duplicate hatası - devam et */
+    }
     const seedMap = Object.fromEntries(seedQuestions.filter((s) => s.optionD).map((s) => [s.questionKey, s.optionD]));
-    const rows = await Question.findAll({ where: { optionD: null } });
+    const [rows] = await sequelize.query("SELECT id, questionKey FROM questions WHERE optionD IS NULL OR optionD = ''");
     let updated = 0;
     for (const row of rows) {
-      const optionD = seedMap[row.questionKey];
-      if (optionD) {
-        await row.update({ optionD });
-        updated++;
-      } else {
-        await row.update({ optionD: 'Hiçbiri' });
-        updated++;
-      }
+      const optionD = seedMap[row.questionKey] || 'Hiçbiri';
+      await sequelize.query('UPDATE questions SET optionD = ? WHERE id = ?', { replacements: [optionD, row.id] });
+      updated++;
     }
     if (updated > 0) console.log(`${updated} soruya 4. seçenek (D) eklendi.`);
   }
@@ -270,4 +271,4 @@ async function seedDatabase() {
   }
 }
 
-module.exports = { seedDatabase, defaultQuestTemplates, defaultShopItems, defaultSeasons, defaultFrames, defaultAchievementRewards };
+module.exports = { seedDatabase, seedQuestions, defaultQuestTemplates, defaultShopItems, defaultSeasons, defaultFrames, defaultAchievementRewards };
