@@ -43,6 +43,16 @@ app.get('/', (req, res) => {
   res.send({ status: 'ok', message: 'Quiz Game Backend' });
 });
 
+// Android WebView OAuth redirect - Google buraya yönlendirir (#id_token=xxx hash ile)
+// Sayfa sadece var olmalı, uygulama URL'i openAuthSessionAsync ile yakalar
+app.get('/auth/google/redirect', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Giriş</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:40px;background:#06060F;color:#fff;">
+<p>Giriş tamamlanıyor...</p>
+<p style="font-size:12px;color:#888;">Bu pencereyi kapatabilirsiniz.</p>
+</body></html>`);
+});
+
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
