@@ -78,11 +78,14 @@ app.get('/auth/google/redirect', (req, res) => {
             return;
           }
           var deepLink = "quiz-arena://login#id_token=" + encodeURIComponent(idToken);
-          window.location.replace(deepLink);
+          var isAndroid = /Android/i.test(navigator.userAgent);
+          var intentUrl = "intent://login#id_token=" + encodeURIComponent(idToken) + "#Intent;scheme=quiz-arena;package=com.quizarena.app;end";
+          var targetUrl = isAndroid ? intentUrl : deepLink;
+          window.location.replace(targetUrl);
           setTimeout(function() {
             document.getElementById("msg").innerHTML = "<p class=\"muted\">Yönlendirme çalışmadıysa aşağıdaki butona dokunun.</p>";
             var btn = document.getElementById("openBtn");
-            btn.href = deepLink;
+            btn.href = targetUrl;
             btn.style.display = "inline-block";
           }, 2500);
         } catch (e) {
@@ -111,7 +114,7 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('MySQL bağlantısı başarılı.');
 
-    await sequelize.sync({ alter: true });
+    await sequelize.sync();
     console.log('Tablolar senkronize edildi.');
 
     await seedDatabase();
