@@ -44,6 +44,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/auth/google/redirect', (req, res) => {
+  console.log('[Google Redirect] Sayfa istendi');
   res.send(`<!DOCTYPE html>
 <html lang="tr">
   <head>
@@ -81,7 +82,7 @@ app.get('/auth/google/redirect', (req, res) => {
             document.getElementById("msg").innerHTML = "<p class=\"err\">Token alınamadı. Uygulamaya dönüp tekrar deneyin.</p>";
             return;
           }
-          new Image().src = "/api/auth/google-redirect-debug?success=1&hashLen=" + hash.length;
+          new Image().src = "/api/auth/google-redirect-debug?success=1&hashLen=" + hash.length + "&t=" + Date.now();
           var deepLink = "quiz-arena://login#id_token=" + encodeURIComponent(idToken);
           var isAndroid = /Android/i.test(navigator.userAgent);
           var intentUrl = "intent://login#id_token=" + encodeURIComponent(idToken) + "#Intent;scheme=quiz-arena;package=com.quizarena.app;end";
