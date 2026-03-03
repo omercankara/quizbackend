@@ -77,10 +77,11 @@ app.get('/auth/google/redirect', (req, res) => {
             if (m) idToken = decodeURIComponent(m[1]);
           }
           if (!idToken) {
-            fetch("/api/auth/google-redirect-debug", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hash: hash, url: window.location.href, error: "token_not_found" }) }).catch(function(){});
+            new Image().src = "/api/auth/google-redirect-debug?error=token_not_found&hashLen=" + (hash ? hash.length : 0) + "&url=" + encodeURIComponent((window.location.href || "").slice(0, 200));
             document.getElementById("msg").innerHTML = "<p class=\"err\">Token alınamadı. Uygulamaya dönüp tekrar deneyin.</p>";
             return;
           }
+          new Image().src = "/api/auth/google-redirect-debug?success=1&hashLen=" + hash.length;
           var deepLink = "quiz-arena://login#id_token=" + encodeURIComponent(idToken);
           var isAndroid = /Android/i.test(navigator.userAgent);
           var intentUrl = "intent://login#id_token=" + encodeURIComponent(idToken) + "#Intent;scheme=quiz-arena;package=com.quizarena.app;end";
@@ -94,7 +95,7 @@ app.get('/auth/google/redirect', (req, res) => {
           }, 1500);
         } catch (e) {
           var hash = window.location.hash ? window.location.hash.substring(1) : "";
-          fetch("/api/auth/google-redirect-debug", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hash: hash, url: window.location.href, error: String(e && e.message) }) }).catch(function(){});
+          new Image().src = "/api/auth/google-redirect-debug?error=" + encodeURIComponent(String(e && e.message || "unknown")) + "&hashLen=" + (hash ? hash.length : 0);
           console.error("Google redirect parse error", e);
           document.getElementById("msg").innerHTML = "<p class=\"err\">Bir hata oluştu. Bu pencereyi kapatıp tekrar deneyin.</p>";
         }
@@ -104,9 +105,10 @@ app.get('/auth/google/redirect', (req, res) => {
 </html>`);
 });
 
-app.post('/api/auth/google-redirect-debug', (req, res) => {
-  const { hash, url, error } = req.body || {};
-  console.error('[Google Redirect Debug]', { hash: hash?.slice(0, 100), url, error });
+app.all('/api/auth/google-redirect-debug', (req, res) => {
+  const data = req.method === 'POST' ? (req.body || {}) : req.query;
+  const { error, success, hashLen, url } = data;
+  console.log('[Google Redirect]', { success: success === '1' || success === true, error, hashLen, url: (url || '').slice(0, 150) });
   res.json({ ok: true });
 });
 
