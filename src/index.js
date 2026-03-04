@@ -85,15 +85,16 @@ app.get('/auth/google/redirect', (req, res) => {
             document.getElementById("msg").innerHTML = "<p class=\"err\">Token alınamadı. Uygulamaya dönüp tekrar deneyin.</p>";
             return;
           }
-          var deepLink = "quiz-arena://login#id_token=" + encodeURIComponent(idToken);
+          var tokenParam = "id_token=" + encodeURIComponent(idToken);
+          var deepLink = "quiz-arena://login?" + tokenParam;
           var isAndroid = /Android/i.test(navigator.userAgent);
-          var intentUrl = "intent://login#id_token=" + encodeURIComponent(idToken) + "#Intent;scheme=quiz-arena;package=com.quizarena.app;end";
+          var intentUrl = "intent://login?" + tokenParam + "#Intent;scheme=quiz-arena;package=com.quizarena.app;end";
           var btn = document.getElementById("openBtn");
           var targetUrl = isAndroid ? intentUrl : deepLink;
           btn.href = targetUrl;
           btn.setAttribute("data-url", targetUrl);
           try { navigator.sendBeacon("/api/auth/google-redirect-debug", new Blob([JSON.stringify({ success: true })], { type: "application/json" })); } catch(e){}
-          try { window.location.href = deepLink; } catch(e){}
+          try { window.location.href = targetUrl; } catch(e){}
         } catch (e) {
           var hash = window.location.hash ? window.location.hash.substring(1) : "";
           new Image().src = "/api/auth/google-redirect-debug?error=" + encodeURIComponent(String(e && e.message || "unknown")) + "&hashLen=" + (hash ? hash.length : 0);
