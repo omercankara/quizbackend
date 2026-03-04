@@ -52,12 +52,15 @@ app.get('/auth/google/redirect', (req, res) => {
     <title>Giriş Tamamlanıyor...</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#06060F; color:#fff; text-align:center; padding:40px; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#06060F; color:#fff; text-align:center; padding:24px; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:100vh; }
+      #msg { margin-bottom: 24px; }
       p { margin:8px 0; }
-      .muted { color:#888; font-size:12px; }
+      .muted { color:#888; font-size:14px; }
       .err { color:#f44336; font-size:14px; margin-top:20px; }
-      .btn { display:inline-block; margin-top:24px; padding:16px 32px; background:#208AEF; color:#fff; border-radius:12px; text-decoration:none; font-weight:700; font-size:18px; }
-      .btn:hover { background:#1a7ad4; }
+      .btn { display:inline-block; margin-top:16px; padding:18px 40px; min-height:56px; min-width:200px; background:#208AEF; color:#fff !important; border-radius:12px; text-decoration:none; font-weight:700; font-size:18px; line-height:1.2; -webkit-tap-highlight-color:rgba(32,138,239,0.3); }
+      .btn:hover, .btn:active { background:#1a7ad4; }
     </style>
   </head>
   <body>
@@ -65,7 +68,7 @@ app.get('/auth/google/redirect', (req, res) => {
       <p>Giriş tamamlandı!</p>
       <p class="muted">Uygulamaya geçmek için aşağıdaki butona dokunun.</p>
     </div>
-    <a id="openBtn" href="#" class="btn" style="display:none;" onclick="window.location.href=this.getAttribute('data-url');return false;">Uygulamayı Aç</a>
+    <a id="openBtn" href="quiz-arena://login" class="btn" onclick="var u=this.getAttribute('data-url')||this.href;window.location.href=u;return false;">Uygulamayı Aç</a>
     <script>
       (function () {
         try {
@@ -89,7 +92,6 @@ app.get('/auth/google/redirect', (req, res) => {
           var targetUrl = isAndroid ? intentUrl : deepLink;
           btn.href = targetUrl;
           btn.setAttribute("data-url", targetUrl);
-          btn.style.display = "inline-block";
           try { navigator.sendBeacon("/api/auth/google-redirect-debug", new Blob([JSON.stringify({ success: true })], { type: "application/json" })); } catch(e){}
           try { window.location.href = deepLink; } catch(e){}
         } catch (e) {
