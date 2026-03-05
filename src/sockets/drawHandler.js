@@ -5,6 +5,7 @@ const {
   createDrawMatch,
   getDrawMatch,
   removeDrawMatch,
+  removePlayerFromMatch,
   getCurrentDrawer,
   getCurrentWord,
   checkGuess,
@@ -15,6 +16,11 @@ const {
   DRAW_POINTS_CORRECT,
   DRAW_POINTS_DRAWER,
 } = require('../game/drawMatchmaking');
+
+const DRAW_KICK_VOTE_COOLDOWN_MS = 30000;
+const DRAW_KICK_VOTE_TIMEOUT_MS = 30000;
+const DRAW_KICK_MIN_YES = 3;
+const UserModel = require('../models/User');
 
 function setupDrawHandlers(io, socket) {
   let currentUserId = null;
@@ -40,7 +46,7 @@ function setupDrawHandlers(io, socket) {
         const key = result.key;
         const prev = drawLobbyTimers.get(key);
         if (prev) clearTimeout(prev);
-        const t = setTimeout(() => {
+        const t = setTimeout(async () => {
           drawLobbyTimers.delete(key);
           const players = takeDrawLobbyForStart(key);
           if (!players || players.length === 0) return;
@@ -51,9 +57,19 @@ function setupDrawHandlers(io, socket) {
               if (s) s.join(match.id);
             }
           }
-          const playersPayload = players.map((p) => ({ userId: p.userId, username: p.username }));
+          const realIds = players.filter((p) => !p.userId?.startsWith('bot_')).map((p) => p.userId);
+          const avatarResults = await Promise.all(
+            realIds.map((uid) => UserModel.findOne({ where: { oduserId: uid }, attributes: ['avatar'] }))
+          );
+          const avatarMap = {};
+          realIds.forEach((uid, i) => { avatarMap[uid] = avatarResults[i]?.avatar || null; });
+          const playersPayload = players.map((p) => ({
+            userId: p.userId,
+            username: p.username,
+            avatar: p.userId?.startsWith('bot_') ? null : (avatarMap[p.userId] || null),
+          }));
           io.to(match.id).emit('draw_match_found', { matchId: match.id, players: playersPayload });
-          startDrawRound(io, match);
+          startDrawRound(io, match, playersPayload);
         }, DRAW_LOBBY_WAIT_MS);
         drawLobbyTimers.set(key, t);
       }
@@ -138,18 +154,162 @@ function setupDrawHandlers(io, socket) {
   socket.on('draw_leave_match', ({ matchId, userId: leaveUserId }) => {
     const match = getDrawMatch(matchId);
     if (!match) return;
-    if (match.roundTimer) {
+    const result = removePlayerFromMatch(matchId, leaveUserId || currentUserId);
+    if (!result) return;
+
+    socket.leave(matchId);
+    io.to(matchId).emit('draw_player_left', {
+      userId: leaveUserId || currentUserId,
+      username: currentUsername,
+      kicked: false,
+      remainingCount: result.remainingCount,
+    });
+
+    if (result.remainingCount <= 2) {
+      endDrawGame(io, match);
+      return;
+    }
+
+    const drawer = getCurrentDrawer(match);
+    const drawerLeft = !drawer || drawer.userId === (leaveUserId || currentUserId);
+    if (drawerLeft && match.roundTimer) {
       clearTimeout(match.roundTimer);
       match.roundTimer = null;
+      nextDrawRound(io, match);
+    } else {
+      const playersPayload = match.playerOrder.map((uid) => {
+        const p = match.players[uid];
+        const cached = match.playersPayload?.find((x) => x.userId === uid);
+        return { userId: uid, username: p?.username || '?', avatar: cached?.avatar };
+      });
+      match.playersPayload = playersPayload;
+      io.to(matchId).emit('draw_players_updated', { players: playersPayload });
     }
-    socket.leave(matchId);
-    match.status = 'finished';
-    io.to(matchId).emit('draw_player_left', { userId: leaveUserId, username: currentUsername });
-    removeDrawMatch(matchId);
+  });
+
+  socket.on('draw_kick_vote_start', ({ matchId, targetUserId }) => {
+    const match = getDrawMatch(matchId);
+    if (!match || match.status !== 'playing') return;
+    if (!match.players[targetUserId] || targetUserId === currentUserId) return;
+
+    const now = Date.now();
+    const lastVote = match.lastKickVoteTime || 0;
+    if (now - lastVote < DRAW_KICK_VOTE_COOLDOWN_MS) {
+      const waitSec = Math.ceil((DRAW_KICK_VOTE_COOLDOWN_MS - (now - lastVote)) / 1000);
+      socket.emit('draw_kick_vote_error', { error: `Oylama ${waitSec} saniye sonra başlatılabilir` });
+      return;
+    }
+    if (match.kickVote) {
+      socket.emit('draw_kick_vote_error', { error: 'Zaten devam eden bir oylama var' });
+      return;
+    }
+
+    match.lastKickVoteTime = now;
+    match.kickVote = {
+      targetUserId,
+      targetUsername: match.players[targetUserId]?.username || 'Bilinmiyor',
+      initiatorUserId: currentUserId,
+      initiatorUsername: currentUsername || 'Bilinmiyor',
+      votes: {},
+      startTime: now,
+    };
+
+    if (match.kickVoteTimer) clearTimeout(match.kickVoteTimer);
+    match.kickVoteTimer = setTimeout(() => {
+      match.kickVoteTimer = null;
+      if (!match.kickVote) return;
+      const v = match.kickVote;
+      match.kickVote = null;
+      io.to(matchId).emit('draw_kick_vote_ended', {
+        targetUserId: v.targetUserId,
+        targetUsername: v.targetUsername,
+        kicked: false,
+        votes: v.votes,
+      });
+    }, DRAW_KICK_VOTE_TIMEOUT_MS);
+
+    io.to(matchId).emit('draw_kick_vote_started', {
+      targetUserId: match.kickVote.targetUserId,
+      targetUsername: match.kickVote.targetUsername,
+      initiatorUserId: match.kickVote.initiatorUserId,
+      initiatorUsername: match.kickVote.initiatorUsername,
+      votes: {},
+      expiresAt: now + DRAW_KICK_VOTE_TIMEOUT_MS,
+    });
+  });
+
+  socket.on('draw_kick_vote', ({ matchId, vote }) => {
+    const match = getDrawMatch(matchId);
+    if (!match || !match.kickVote || (vote !== 'yes' && vote !== 'no')) return;
+    if (match.kickVote.targetUserId === currentUserId) return;
+
+    match.kickVote.votes[currentUserId] = vote;
+    const votes = match.kickVote.votes;
+    const yesCount = Object.values(votes).filter((v) => v === 'yes').length;
+
+    io.to(matchId).emit('draw_kick_vote_updated', {
+      targetUserId: match.kickVote.targetUserId,
+      votes,
+      yesCount,
+    });
+
+    if (yesCount >= DRAW_KICK_MIN_YES) {
+      if (match.kickVoteTimer) {
+        clearTimeout(match.kickVoteTimer);
+        match.kickVoteTimer = null;
+      }
+      const targetUserId = match.kickVote.targetUserId;
+      const targetUsername = match.kickVote.targetUsername;
+      const targetSocketId = match.players[targetUserId]?.socketId;
+      match.kickVote = null;
+
+      const result = removePlayerFromMatch(matchId, targetUserId);
+      if (!result) return;
+
+      const kickedSocket = targetSocketId ? io.sockets.sockets.get(targetSocketId) : null;
+      if (kickedSocket) {
+        kickedSocket.leave(matchId);
+        kickedSocket.emit('draw_kicked', { matchId });
+      }
+
+      io.to(matchId).emit('draw_player_left', {
+        userId: targetUserId,
+        username: targetUsername,
+        kicked: true,
+        remainingCount: result.remainingCount,
+      });
+
+      io.to(matchId).emit('draw_kick_vote_ended', {
+        targetUserId,
+        targetUsername,
+        kicked: true,
+        votes,
+      });
+
+      if (result.remainingCount <= 2) {
+        endDrawGame(io, match);
+      } else {
+        const drawer = getCurrentDrawer(match);
+        const drawerKicked = drawer?.userId === targetUserId;
+        if (drawerKicked && match.roundTimer) {
+          clearTimeout(match.roundTimer);
+          match.roundTimer = null;
+          nextDrawRound(io, match);
+        } else {
+          const playersPayload = match.playerOrder.map((uid) => {
+            const p = match.players[uid];
+            const cached = match.playersPayload?.find((x) => x.userId === uid);
+            return { userId: uid, username: p?.username || '?', avatar: cached?.avatar };
+          });
+          match.playersPayload = playersPayload;
+          io.to(matchId).emit('draw_players_updated', { players: playersPayload });
+        }
+      }
+    }
   });
 }
 
-function startDrawRound(io, match) {
+function startDrawRound(io, match, playersPayload) {
   const drawer = getCurrentDrawer(match);
   const word = getCurrentWord(match);
 
@@ -169,7 +329,9 @@ function startDrawRound(io, match) {
     wordLength: word.length,
     roundTime: Math.floor(DRAW_ROUND_TIME_MS / 1000),
     hint,
+    players: playersPayload || match.playersPayload,
   };
+  if (playersPayload) match.playersPayload = playersPayload;
 
   io.to(match.id).emit('draw_round_start', roundPayload);
   io.to(drawer.socketId).emit('draw_your_word', { word });
@@ -192,7 +354,7 @@ function nextDrawRound(io, match) {
     return;
   }
 
-  setTimeout(() => startDrawRound(io, match), 2000);
+  setTimeout(() => startDrawRound(io, match, match.playersPayload), 2000);
 }
 
 function endDrawGame(io, match) {
