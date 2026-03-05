@@ -1,6 +1,7 @@
 const {
   joinDrawLobby,
   leaveDrawLobby,
+  takeDrawLobbyForStart,
   createDrawMatch,
   getDrawMatch,
   removeDrawMatch,
@@ -8,7 +9,8 @@ const {
   getCurrentWord,
   checkGuess,
   drawLobbyTimers,
-  DRAW_PLAYERS_REQUIRED,
+  DRAW_MIN_PLAYERS,
+  DRAW_LOBBY_WAIT_MS,
   DRAW_ROUND_TIME_MS,
   DRAW_POINTS_CORRECT,
   DRAW_POINTS_DRAWER,
@@ -34,34 +36,42 @@ function setupDrawHandlers(io, socket) {
         return;
       }
 
-      if (result.started) {
-        const match = createDrawMatch(result.players);
-        for (const p of result.players) {
-          if (p.socketId) {
-            const s = io.sockets.sockets.get(p.socketId);
-            if (s) s.join(match.id);
+      if (result.canStart) {
+        const key = result.key;
+        const prev = drawLobbyTimers.get(key);
+        if (prev) clearTimeout(prev);
+        const t = setTimeout(() => {
+          drawLobbyTimers.delete(key);
+          const players = takeDrawLobbyForStart(key);
+          if (!players || players.length === 0) return;
+          const match = createDrawMatch(players);
+          for (const p of players) {
+            if (p.socketId) {
+              const s = io.sockets.sockets.get(p.socketId);
+              if (s) s.join(match.id);
+            }
           }
-        }
-        const playersPayload = result.players.map((p) => ({
-          userId: p.userId,
-          username: p.username,
-        }));
-        io.to(match.id).emit('draw_match_found', {
-          matchId: match.id,
-          players: playersPayload,
-        });
-        startDrawRound(io, match);
-        return;
+          const playersPayload = players.map((p) => ({ userId: p.userId, username: p.username }));
+          io.to(match.id).emit('draw_match_found', { matchId: match.id, players: playersPayload });
+          startDrawRound(io, match);
+        }, DRAW_LOBBY_WAIT_MS);
+        drawLobbyTimers.set(key, t);
       }
 
       socket.emit('draw_queue_waiting', {
-        message: `Çiz ve Bil lobisi (${result.count}/${DRAW_PLAYERS_REQUIRED})...`,
+        message: result.count >= DRAW_MIN_PLAYERS
+          ? `Başlamak için ${DRAW_LOBBY_WAIT_MS / 1000} saniye bekleniyor (${result.count} oyuncu)...`
+          : `Oyuncu bekleniyor (${result.count}/${DRAW_MIN_PLAYERS})...`,
         count: result.count,
       });
     });
 
     socket.on('draw_queue_leave', () => {
-      leaveDrawLobby(socket.id);
+      const r = leaveDrawLobby(socket.id);
+      if (r && r.remainingCount !== undefined && r.remainingCount < DRAW_MIN_PLAYERS) {
+        const prev = drawLobbyTimers.get(r.key);
+        if (prev) { clearTimeout(prev); drawLobbyTimers.delete(r.key); }
+      }
       socket.emit('draw_queue_left');
     });
 

@@ -1,9 +1,9 @@
-// Çiz ve Bil - 5 oyuncu lobisi
+// Çiz ve Bil - min 2 oyuncu, 10 sn bekleme
 const { getRandomDrawWords } = require('../data/drawWords');
 
 const DRAW_LOBBY_KEY = 'draw_lobby';
-const DRAW_PLAYERS_REQUIRED = 5;
-const DRAW_LOBBY_TIMEOUT_MS = 60000; // 1 dakika bekleme
+const DRAW_MIN_PLAYERS = 2;
+const DRAW_LOBBY_WAIT_MS = 10000; // 10 saniye minimum bekleme
 const DRAW_ROUND_TIME_MS = 60000; // 1 dakika çizim süresi
 const DRAW_POINTS_CORRECT = 100; // Doğru tahmin puanı
 const DRAW_POINTS_DRAWER = 50; // Çizen oyuncuya (kelime tamamlandıysa)
@@ -24,7 +24,7 @@ function joinDrawLobby(playerData) {
   if (lobby.players.some((p) => p.userId === playerData.userId)) {
     return { error: 'Zaten lobidesin' };
   }
-  if (lobby.players.length >= DRAW_PLAYERS_REQUIRED) {
+  if (lobby.players.length >= 10) {
     return { error: 'Lobi dolu' };
   }
 
@@ -32,12 +32,20 @@ function joinDrawLobby(playerData) {
   drawLobbies.set(key, lobby);
   const count = lobby.players.length;
 
-  if (count >= DRAW_PLAYERS_REQUIRED) {
-    const toStart = [...lobby.players];
-    drawLobbies.delete(key);
-    return { started: true, players: toStart };
-  }
-  return { joined: true, count, key };
+  return { joined: true, count, key, canStart: count >= DRAW_MIN_PLAYERS };
+}
+
+function takeDrawLobbyForStart(key) {
+  const lobby = drawLobbies.get(key);
+  if (!lobby || lobby.players.length < DRAW_MIN_PLAYERS) return null;
+  const toStart = [...lobby.players];
+  drawLobbies.delete(key);
+  return toStart;
+}
+
+function getDrawLobbyCount(key) {
+  const lobby = drawLobbies.get(key);
+  return lobby ? lobby.players.length : 0;
 }
 
 function leaveDrawLobby(socketId) {
@@ -47,8 +55,9 @@ function leaveDrawLobby(socketId) {
   const idx = lobby.players.findIndex((p) => p.socketId === socketId);
   if (idx >= 0) {
     lobby.players.splice(idx, 1);
-    if (lobby.players.length === 0) drawLobbies.delete(key);
-    return { left: true, key };
+    const remaining = lobby.players.length;
+    if (remaining === 0) drawLobbies.delete(key);
+    return { left: true, key, remainingCount: remaining };
   }
   return false;
 }
@@ -127,6 +136,8 @@ function checkGuess(guess, word) {
 module.exports = {
   joinDrawLobby,
   leaveDrawLobby,
+  takeDrawLobbyForStart,
+  getDrawLobbyCount,
   createDrawMatch,
   getDrawMatch,
   removeDrawMatch,
@@ -134,8 +145,8 @@ module.exports = {
   getCurrentWord,
   checkGuess,
   drawLobbyTimers,
-  DRAW_PLAYERS_REQUIRED,
-  DRAW_LOBBY_TIMEOUT_MS,
+  DRAW_MIN_PLAYERS,
+  DRAW_LOBBY_WAIT_MS,
   DRAW_ROUND_TIME_MS,
   DRAW_POINTS_CORRECT,
   DRAW_POINTS_DRAWER,
