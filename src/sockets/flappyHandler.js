@@ -31,15 +31,18 @@ function startBotPlayer(io, match, botId, difficulty) {
   const targetScore = skill.minScore + Math.floor(Math.random() * (skill.maxScore - skill.minScore));
   let score = 0;
 
+  // Oyunla aynı fizik sabitleri
   const grav = difficulty === 'easy' ? 0.28 : difficulty === 'hard' ? 0.45 : 0.35;
-  const flap = difficulty === 'easy' ? -5.5 : difficulty === 'hard' ? -7.5 : -6.5;
+  const flapStr = difficulty === 'easy' ? -5.5 : difficulty === 'hard' ? -7.5 : -6.5;
   const scoreMs = difficulty === 'easy' ? 1200 : difficulty === 'hard' ? 600 : 800;
+
+  // 50ms tick = ~3 oyun frame'i (oyun 16.67ms/frame ~60fps)
+  const SUB_STEPS = 3;
 
   let botY = 160 + Math.random() * 60;
   let botVel = 0;
-  let goalY = 140 + Math.random() * 100;
+  let goalY = 130 + Math.random() * 100;
   let nextGoalTime = Date.now() + 1500 + Math.random() * 1500;
-  let flapCooldown = 0;
 
   const physicsInterval = setInterval(() => {
     if (match.status !== 'playing' || !match.alive[botId]) {
@@ -47,29 +50,27 @@ function startBotPlayer(io, match, botId, difficulty) {
       return;
     }
 
-    // Hedefi periyodik değiştir (boru boşluklarını taklit eder)
     if (Date.now() > nextGoalTime) {
-      goalY = 100 + Math.random() * 180;
-      nextGoalTime = Date.now() + 1200 + Math.random() * 1800;
+      goalY = 80 + Math.random() * 200;
+      nextGoalTime = Date.now() + 1200 + Math.random() * 2000;
     }
 
-    botVel += grav;
-    botY += botVel;
+    // Flap kararı (tick başına 1 kez, ilk sub-step'te uygulanır)
+    let doFlap = false;
+    if (botY > goalY + 12 && botVel >= 0) doFlap = true;
+    if (botVel > 5) doFlap = true;
 
-    if (botY > 350) { botY = 350; botVel = 0; }
-    if (botY < 15) { botY = 15; botVel = 1; }
-
-    flapCooldown -= 50;
-
-    // Sadece hedefin altındayken ve düşüyorken flap yap
-    const needsFlap = botY > goalY + 8 && botVel > 0.5;
-    // Çok hızlı düşüyorsa acil flap
-    const urgentFlap = botVel > 4;
-
-    if ((needsFlap || urgentFlap) && flapCooldown <= 0) {
-      botVel = flap;
-      flapCooldown = 120 + Math.random() * 80;
+    for (let i = 0; i < SUB_STEPS; i++) {
+      if (doFlap && i === 0) {
+        botVel = flapStr;
+        doFlap = false;
+      }
+      botVel += grav;
+      botY += botVel;
     }
+
+    if (botY > 340) { botY = 340; botVel = 0; }
+    if (botY < 10) { botY = 10; botVel = Math.abs(botVel) * 0.2; }
 
     io.to(match.id).emit('flappy_bot_pos', { odm: botId, y: Math.round(botY) });
   }, 50);
@@ -385,6 +386,7 @@ function setupFlappyHandlers(io, socket) {
 }
 
 async function finishMatch(io, match) {
+  if (match.status === 'finished') return;
   match.status = 'finished';
   for (const uid of Object.keys(match.players)) {
     if (uid.startsWith('bot_') && botTimers.has(uid)) {
