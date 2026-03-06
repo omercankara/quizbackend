@@ -1,7 +1,7 @@
 const express = require('express');
 const { Op } = require('sequelize');
 const router = express.Router();
-const { FlappyUser, FlappyScore, FlappyQuest, FlappySeason, FlappyFriend } = require('../models/flappy');
+const { FlappyUser, FlappyScore, FlappyQuest, FlappySeason, FlappyFriend, FlappyNotification, FlappyWeeklyChallenge } = require('../models/flappy');
 
 const BIRDS = [
   { key: 'default', name: 'Klasik Kuş', price: 0, colors: { body: '#F7DC14', beak: '#E67E22', wing: '#E6B800' } },
@@ -348,6 +348,148 @@ router.post('/friends/add', async (req, res) => {
   }
 });
 
+// ── BAŞARIMLAR ──
+const ACHIEVEMENTS = [
+  { key: 'first_game', name: 'İlk Adım', desc: 'İlk oyununu oyna', icon: 'game-controller', check: (u) => u.totalGames >= 1, reward: 20 },
+  { key: 'score_10', name: '10 Boru', desc: 'Tek oyunda 10 boru geç', icon: 'flag', check: (u) => u.bestScore >= 10, reward: 30 },
+  { key: 'score_25', name: '25 Boru', desc: 'Tek oyunda 25 boru geç', icon: 'flag', check: (u) => u.bestScore >= 25, reward: 50 },
+  { key: 'score_50', name: '50 Boru', desc: 'Tek oyunda 50 boru geç', icon: 'flag', check: (u) => u.bestScore >= 50, reward: 100 },
+  { key: 'score_100', name: 'Yüzlük', desc: 'Tek oyunda 100 boru geç', icon: 'trophy', check: (u) => u.bestScore >= 100, reward: 300 },
+  { key: 'win_1', name: 'İlk Zafer', desc: 'İlk maçını kazan', icon: 'ribbon', check: (u) => u.wins >= 1, reward: 30 },
+  { key: 'win_5', name: '5 Galibiyet', desc: '5 maç kazan', icon: 'ribbon', check: (u) => u.wins >= 5, reward: 80 },
+  { key: 'win_10', name: '10 Galibiyet', desc: '10 maç kazan', icon: 'ribbon', check: (u) => u.wins >= 10, reward: 150 },
+  { key: 'win_25', name: 'Şampiyon', desc: '25 maç kazan', icon: 'ribbon', check: (u) => u.wins >= 25, reward: 300 },
+  { key: 'games_10', name: 'Deneyimli', desc: '10 oyun oyna', icon: 'game-controller', check: (u) => u.totalGames >= 10, reward: 40 },
+  { key: 'games_50', name: 'Veteran', desc: '50 oyun oyna', icon: 'game-controller', check: (u) => u.totalGames >= 50, reward: 120 },
+  { key: 'games_100', name: 'Efsane', desc: '100 oyun oyna', icon: 'game-controller', check: (u) => u.totalGames >= 100, reward: 250 },
+  { key: 'coins_500', name: 'Zengin', desc: '500 coin biriktir', icon: 'logo-bitcoin', check: (u) => u.coins >= 500, reward: 50 },
+  { key: 'coins_2000', name: 'Milyoner', desc: '2000 coin biriktir', icon: 'logo-bitcoin', check: (u) => u.coins >= 2000, reward: 100 },
+  { key: 'level_5', name: 'Seviye 5', desc: 'Seviye 5\'e ulaş', icon: 'star', check: (u) => u.level >= 5, reward: 60 },
+  { key: 'level_10', name: 'Seviye 10', desc: 'Seviye 10\'a ulaş', icon: 'star', check: (u) => u.level >= 10, reward: 150 },
+  { key: 'level_20', name: 'Seviye 20', desc: 'Seviye 20\'ye ulaş', icon: 'star', check: (u) => u.level >= 20, reward: 400 },
+  { key: 'no_powerup_20', name: 'Doğal Yetenek', desc: 'Power-up kullanmadan 20 boru geç', icon: 'leaf', check: () => false, reward: 100 },
+];
+
+function xpForLevel(level) {
+  return Math.floor(50 + level * level * 3 + level * 15);
+}
+
+function addXp(user, amount) {
+  user.xp += amount;
+  let leveledUp = false;
+  while (user.xp >= xpForLevel(user.level)) {
+    user.xp -= xpForLevel(user.level);
+    user.level += 1;
+    leveledUp = true;
+  }
+  return leveledUp;
+}
+
+async function checkAchievements(user) {
+  const owned = user.achievements || [];
+  const newlyUnlocked = [];
+  for (const a of ACHIEVEMENTS) {
+    if (owned.includes(a.key)) continue;
+    if (a.check(user)) {
+      owned.push(a.key);
+      newlyUnlocked.push(a);
+      user.coins += a.reward;
+    }
+  }
+  if (newlyUnlocked.length > 0) {
+    user.achievements = owned;
+    await user.save();
+    for (const a of newlyUnlocked) {
+      await FlappyNotification.create({
+        userId: user.userId,
+        type: 'achievement',
+        message: `Başarım açıldı: ${a.name} (+${a.reward} coin)`,
+        data: { key: a.key },
+      });
+    }
+  }
+  return newlyUnlocked;
+}
+
+router.get('/achievements', (_req, res) => {
+  res.json({ achievements: ACHIEVEMENTS.map(({ check, ...rest }) => rest) });
+});
+
+router.get('/achievements/:userId', async (req, res) => {
+  try {
+    const user = await FlappyUser.findByPk(req.params.userId);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    const owned = user.achievements || [];
+    const list = ACHIEVEMENTS.map(({ check, ...rest }) => ({ ...rest, unlocked: owned.includes(rest.key) }));
+    res.json({ achievements: list, level: user.level, xp: user.xp, xpToNext: xpForLevel(user.level) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── BİLDİRİMLER ──
+router.get('/notifications/:userId', async (req, res) => {
+  try {
+    const notifs = await FlappyNotification.findAll({
+      where: { userId: req.params.userId },
+      order: [['createdAt', 'DESC']],
+      limit: 30,
+    });
+    res.json({ notifications: notifs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/notifications/read', async (req, res) => {
+  try {
+    await FlappyNotification.update({ read: true }, { where: { userId: req.body.userId, read: false } });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── HAFTALIK CHALLENGE ──
+router.get('/weekly-challenge', async (_req, res) => {
+  try {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const weekStart = new Date(now.getTime() - dayOfWeek * 86400000);
+    const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+    const wsStr = weekStart.toISOString().slice(0, 10);
+    const weStr = weekEnd.toISOString().slice(0, 10);
+
+    let challenge = await FlappyWeeklyChallenge.findOne({ where: { weekStart: wsStr } });
+    if (!challenge) {
+      const templates = [
+        { name: 'Boru Maratonu', description: 'Topluluk olarak 10.000 boru geçin', targetType: 'total_score', targetValue: 10000, reward: 100 },
+        { name: 'Oyun Fırtınası', description: 'Topluluk olarak 500 oyun oynayın', targetType: 'total_games', targetValue: 500, reward: 80 },
+        { name: 'Zafer Yolu', description: 'Topluluk olarak 200 galibiyet kazanın', targetType: 'total_wins', targetValue: 200, reward: 120 },
+      ];
+      const tmpl = templates[Math.floor(Math.random() * templates.length)];
+      challenge = await FlappyWeeklyChallenge.create({ ...tmpl, weekStart: wsStr, weekEnd: weStr });
+    }
+    res.json({ challenge });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── PROFİL GÜNCELLEME ──
+router.post('/profile/update', async (req, res) => {
+  try {
+    const { userId, bio } = req.body;
+    const user = await FlappyUser.findByPk(userId);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    if (bio !== undefined) user.username = user.username;
+    await user.save();
+    res.json({ success: true, user });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
 module.exports.getOrCreateFlappyUser = getOrCreateFlappyUser;
 module.exports.DAILY_QUEST_POOL = DAILY_QUEST_POOL;
@@ -355,3 +497,7 @@ module.exports.BIRDS = BIRDS;
 module.exports.THEMES = THEMES;
 module.exports.POWERUPS = POWERUPS;
 module.exports.DAILY_REWARDS = DAILY_REWARDS;
+module.exports.ACHIEVEMENTS = ACHIEVEMENTS;
+module.exports.addXp = addXp;
+module.exports.checkAchievements = checkAchievements;
+module.exports.xpForLevel = xpForLevel;

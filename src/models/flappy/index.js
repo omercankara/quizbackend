@@ -4,5 +4,7 @@ const FlappyUser = require('./FlappyUser');
 const FlappyQuest = require('./FlappyQuest');
 const FlappySeason = require('./FlappySeason');
 const FlappyFriend = require('./FlappyFriend');
+const FlappyNotification = require('./FlappyNotification');
+const FlappyWeeklyChallenge = require('./FlappyWeeklyChallenge');
 
-module.exports = { FlappyMatch, FlappyScore, FlappyUser, FlappyQuest, FlappySeason, FlappyFriend };
+module.exports = { FlappyMatch, FlappyScore, FlappyUser, FlappyQuest, FlappySeason, FlappyFriend, FlappyNotification, FlappyWeeklyChallenge };

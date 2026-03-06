@@ -91,8 +91,31 @@ const FlappyUser = flappySequelize.define(
       allowNull: true,
       defaultValue: null,
     },
+    // Seviye sistemi
+    level: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1,
+    },
+    xp: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    // Başarımlar (JSON array of achievement keys)
+    achievements: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: [],
+    },
     // Sezon
     seasonXp: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    // Toplam toplanan coin (oyun içi)
+    totalCoinsCollected: {
       type: DataTypes.INTEGER,
       allowNull: false,
       defaultValue: 0,
