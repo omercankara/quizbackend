@@ -47,17 +47,25 @@ function setupFlappyHandlers(io, socket) {
             if (s) s.join(match.id);
           }
         }
-        const realIds = players.filter((p) => !p.userId?.startsWith('bot_')).map((p) => p.userId);
-        const avatarResults = await Promise.all(
-          realIds.map((uid) => UserModel.findOne({ where: { oduserId: uid }, attributes: ['avatar'] }))
-        );
-        const avatarMap = {};
-        realIds.forEach((uid, i) => { avatarMap[uid] = avatarResults[i]?.avatar || null; });
-        const playersPayload = players.map((p) => ({
-          userId: p.userId,
-          username: p.username,
-          avatar: p.userId?.startsWith('bot_') ? null : (avatarMap[p.userId] || null),
-        }));
+        let playersPayload = players.map((p) => ({ userId: p.userId, username: p.username, avatar: null }));
+        try {
+          const realIds = players.filter((p) => !p.userId?.startsWith('bot_')).map((p) => p.userId);
+          if (realIds.length > 0 && UserModel) {
+            const avatarResults = await Promise.all(
+              realIds.map((uid) => UserModel.findOne({ where: { oduserId: uid }, attributes: ['avatar'] }).catch(() => null))
+            );
+            const avatarMap = {};
+            realIds.forEach((uid, i) => { avatarMap[uid] = avatarResults[i]?.avatar || null; });
+            playersPayload = players.map((p) => ({
+              userId: p.userId,
+              username: p.username,
+              avatar: p.userId?.startsWith('bot_') ? null : (avatarMap[p.userId] || null),
+            }));
+          }
+        } catch (e) {
+          console.error('[Flappy] Avatar fetch error:', e?.message);
+        }
+        console.log('[Flappy] Match started:', match.id, 'players:', players.length);
         io.to(match.id).emit('flappy_match_found', { matchId: match.id, seed: match.seed, players: playersPayload });
       }, FLAPPY_LOBBY_WAIT_MS);
       flappyLobbyTimers.set(key, t);
