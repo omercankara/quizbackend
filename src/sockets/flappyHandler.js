@@ -21,16 +21,19 @@ function setupFlappyHandlers(io, socket) {
   let currentUserId = null;
   let currentUsername = null;
 
-  socket.on('flappy_queue_join', async ({ userId, username, difficulty }) => {
+  socket.on('flappy_queue_join', async ({ userId, username, difficulty, speedMult, theme }) => {
     currentUserId = userId;
     currentUsername = username;
     const diff = ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium';
+    const spd = [0.75, 1, 1.5, 2].includes(Number(speedMult)) ? Number(speedMult) : 1;
+    const validThemes = ['space', 'classic', 'sunset', 'neon', 'snow'];
+    const thm = validThemes.includes(theme) ? theme : 'space';
     if (!userId || !username) {
       socket.emit('flappy_queue_error', { error: 'Geçersiz kullanıcı bilgisi' });
       return;
     }
 
-    const playerData = { socketId: socket.id, userId, username, difficulty: diff };
+    const playerData = { socketId: socket.id, userId, username, difficulty: diff, speedMult: spd, theme: thm };
     const result = joinFlappyLobby(playerData);
 
     if (result.error) {
@@ -48,8 +51,12 @@ function setupFlappyHandlers(io, socket) {
         if (!players || players.length === 0) return;
 
         const matchDifficulty = players[0]?.difficulty || diff;
+        const matchSpeed = players[0]?.speedMult || 1;
+        const matchTheme = players[0]?.theme || 'space';
         const match = createFlappyMatch(players);
         match.difficulty = matchDifficulty;
+        match.speedMult = matchSpeed;
+        match.theme = matchTheme;
         for (const p of players) {
           if (p.socketId) {
             const s = io.sockets.sockets.get(p.socketId);
@@ -82,6 +89,8 @@ function setupFlappyHandlers(io, socket) {
           players: playersPayload,
           startAt,
           difficulty: matchDifficulty,
+          speedMult: matchSpeed,
+          theme: matchTheme,
         });
         setTimeout(() => {
           io.to(match.id).emit('flappy_game_start', { matchId: match.id });
