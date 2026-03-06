@@ -5,7 +5,9 @@ const cors = require('cors');
 require('dotenv').config();
 
 const { sequelize, ensureDatabase } = require('./database/config');
+const { flappySequelize, ensureFlappyDatabase } = require('./database/flappyConfig');
 require('./models');
+require('./models/flappy');
 const { seedDatabase } = require('./database/seed');
 const { ensureDefaultCredentials } = require('./data/admin-credentials');
 
@@ -125,12 +127,17 @@ setupChatSocket(io);
 async function startServer() {
   try {
     await ensureDatabase();
-    console.log('Veritabanı kontrol edildi / oluşturuldu.');
+    await ensureFlappyDatabase();
+    console.log('Veritabanları kontrol edildi / oluşturuldu.');
 
     await sequelize.authenticate();
-    console.log('MySQL bağlantısı başarılı.');
+    console.log('MySQL (Quiz Arena) bağlantısı başarılı.');
+
+    await flappySequelize.authenticate();
+    console.log('MySQL (Flappy Bird) bağlantısı başarılı.');
 
     await sequelize.sync();
+    await flappySequelize.sync();
     console.log('Tablolar senkronize edildi.');
 
     await seedDatabase();

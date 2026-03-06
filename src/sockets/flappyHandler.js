@@ -11,6 +11,7 @@ const {
   FLAPPY_LOBBY_WAIT_MS,
 } = require('../game/flappyMatchmaking');
 const UserModel = require('../models/User');
+const { FlappyMatch, FlappyScore } = require('../models/flappy');
 
 function setupFlappyHandlers(io, socket) {
   let currentUserId = null;
@@ -66,7 +67,16 @@ function setupFlappyHandlers(io, socket) {
           console.error('[Flappy] Avatar fetch error:', e?.message);
         }
         console.log('[Flappy] Match started:', match.id, 'players:', players.length);
-        io.to(match.id).emit('flappy_match_found', { matchId: match.id, seed: match.seed, players: playersPayload });
+        const startAt = Date.now() + 3000;
+        io.to(match.id).emit('flappy_match_found', {
+          matchId: match.id,
+          seed: match.seed,
+          players: playersPayload,
+          startAt,
+        });
+        setTimeout(() => {
+          io.to(match.id).emit('flappy_game_start', { matchId: match.id });
+        }, 3000);
       }, FLAPPY_LOBBY_WAIT_MS);
       flappyLobbyTimers.set(key, t);
     }
@@ -122,6 +132,9 @@ function setupFlappyHandlers(io, socket) {
         scores: match.scores,
         leaderboard,
       });
+      saveFlappyMatchToDb(match.id, match.seed, match.players, match.scores, winnerId).catch((e) =>
+        console.error('[Flappy] DB save error:', e?.message)
+      );
       setTimeout(() => removeFlappyMatch(matchId), 15000);
     }
   });
@@ -151,10 +164,38 @@ function setupFlappyHandlers(io, socket) {
           scores: match.scores,
           leaderboard,
         });
+        saveFlappyMatchToDb(match.id, match.seed, match.players, match.scores, winnerId).catch((e) =>
+          console.error('[Flappy] DB save error:', e?.message)
+        );
         setTimeout(() => removeFlappyMatch(matchId), 15000);
       }
     }
   });
+}
+
+async function saveFlappyMatchToDb(matchId, seed, players, scores, winnerId) {
+  const playerCount = Object.keys(players).length;
+  await FlappyMatch.create({
+    id: matchId,
+    seed,
+    playerCount,
+    winnerId,
+    scores,
+    finishedAt: new Date(),
+  });
+  const leaderboard = Object.entries(scores)
+    .map(([uid, s]) => ({ userId: uid, username: players[uid]?.username || '?', score: s }))
+    .sort((a, b) => b.score - a.score);
+  for (let i = 0; i < leaderboard.length; i++) {
+    const p = leaderboard[i];
+    await FlappyScore.create({
+      matchId,
+      userId: p.userId,
+      username: p.username,
+      score: p.score,
+      rank: i + 1,
+    });
+  }
 }
 
 module.exports = { setupFlappyHandlers };
