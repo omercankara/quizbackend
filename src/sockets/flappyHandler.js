@@ -12,9 +12,10 @@ const {
 } = require('../game/flappyMatchmaking');
 const UserModel = require('../models/User');
 const { FlappyMatch, FlappyScore, FlappyUser, FlappyQuest } = require('../models/flappy');
-const { DAILY_QUEST_POOL } = require('../routes/flappy');
+const { DAILY_QUEST_POOL, addXp, checkAchievements, xpForLevel } = require('../routes/flappy');
 
 const privateLobbyMap = new Map();
+const spectatorMap = new Map();
 
 function setupFlappyHandlers(io, socket) {
   let currentUserId = null;
@@ -139,15 +140,26 @@ function setupFlappyHandlers(io, socket) {
     if (typeof score !== 'number' || score < prev) return;
     match.scores[currentUserId] = score;
     socket.to(matchId).emit('flappy_score_update', { userId: currentUserId, username: currentUsername, score });
+    // Canlı izleyicilere de gönder
+    const room = `spectate_${matchId}`;
+    io.to(room).emit('flappy_spectate_score', { userId: currentUserId, username: currentUsername, score });
   });
 
-  socket.on('flappy_died', ({ matchId }) => {
+  socket.on('flappy_died', ({ matchId, coinsCollected }) => {
     const match = getFlappyMatch(matchId);
     if (!match || match.status !== 'playing') return;
     if (!match.players[currentUserId]) return;
     match.alive[currentUserId] = false;
+    if (!match.coinsCollected) match.coinsCollected = {};
+    match.coinsCollected[currentUserId] = coinsCollected || 0;
     const aliveCount = Object.values(match.alive).filter(Boolean).length;
     io.to(matchId).emit('flappy_player_died', {
+      userId: currentUserId,
+      username: currentUsername,
+      score: match.scores[currentUserId] || 0,
+      aliveCount,
+    });
+    io.to(`spectate_${matchId}`).emit('flappy_spectate_died', {
       userId: currentUserId,
       username: currentUsername,
       score: match.scores[currentUserId] || 0,
@@ -175,6 +187,41 @@ function setupFlappyHandlers(io, socket) {
         finishMatch(io, match);
       }
     }
+  });
+
+  // Emoji reaksiyonları
+  socket.on('flappy_emoji', ({ matchId, emoji, userId, username }) => {
+    socket.to(matchId).emit('flappy_emoji', { emoji, userId, username });
+    io.to(`spectate_${matchId}`).emit('flappy_emoji', { emoji, userId, username });
+  });
+
+  // Canlı izleme
+  socket.on('flappy_spectate_join', ({ matchId }) => {
+    const match = getFlappyMatch(matchId);
+    if (!match) {
+      socket.emit('flappy_spectate_error', { error: 'Maç bulunamadı' });
+      return;
+    }
+    const room = `spectate_${matchId}`;
+    socket.join(room);
+    if (!spectatorMap.has(matchId)) spectatorMap.set(matchId, new Set());
+    spectatorMap.get(matchId).add(socket.id);
+    socket.emit('flappy_spectate_info', {
+      matchId,
+      players: Object.entries(match.players).map(([uid, p]) => ({
+        userId: uid,
+        username: p.username,
+        alive: match.alive[uid],
+        score: match.scores[uid] || 0,
+      })),
+      status: match.status,
+    });
+  });
+
+  socket.on('flappy_spectate_leave', ({ matchId }) => {
+    socket.leave(`spectate_${matchId}`);
+    const set = spectatorMap.get(matchId);
+    if (set) { set.delete(socket.id); if (set.size === 0) spectatorMap.delete(matchId); }
   });
 
   // Arkadaşlarla oyna - özel lobi
@@ -240,13 +287,13 @@ async function finishMatch(io, match) {
     .map(([uid, s]) => ({ userId: uid, username: match.players[uid]?.username || '?', score: s }))
     .sort((a, b) => b.score - a.score);
 
-  // Coin kazandırma
   const coinGains = {};
   for (let i = 0; i < leaderboard.length; i++) {
     const p = leaderboard[i];
     let coins = 5 + Math.floor(p.score * 2);
     if (p.userId === winnerId) coins += 20;
     if (i === 0) coins += 10;
+    coins += (match.coinsCollected?.[p.userId] || 0);
     coinGains[p.userId] = coins;
   }
 
@@ -257,15 +304,19 @@ async function finishMatch(io, match) {
     leaderboard,
     coinGains,
   });
+  io.to(`spectate_${match.id}`).emit('flappy_spectate_finished', {
+    matchId: match.id,
+    winnerId,
+    leaderboard,
+  });
 
-  // DB kayıt + kullanıcı güncelleme
-  saveFlappyMatchToDb(match.id, match.seed, match.players, match.scores, winnerId, coinGains).catch((e) =>
+  saveFlappyMatchToDb(match.id, match.seed, match.players, match.scores, winnerId, coinGains, match.coinsCollected).catch((e) =>
     console.error('[Flappy] DB save error:', e?.message)
   );
   setTimeout(() => removeFlappyMatch(match.id), 15000);
 }
 
-async function saveFlappyMatchToDb(matchId, seed, players, scores, winnerId, coinGains) {
+async function saveFlappyMatchToDb(matchId, seed, players, scores, winnerId, coinGains, coinsCollected) {
   const playerCount = Object.keys(players).length;
   await FlappyMatch.create({
     id: matchId,
@@ -283,7 +334,6 @@ async function saveFlappyMatchToDb(matchId, seed, players, scores, winnerId, coi
     const p = leaderboard[i];
     await FlappyScore.create({ matchId, userId: p.userId, username: p.username, score: p.score, rank: i + 1 });
 
-    // FlappyUser güncelle
     try {
       let user = await FlappyUser.findByPk(p.userId);
       if (!user) {
@@ -294,8 +344,16 @@ async function saveFlappyMatchToDb(matchId, seed, players, scores, winnerId, coi
       if (p.score > user.bestScore) user.bestScore = p.score;
       if (p.userId === winnerId) user.wins += 1;
       user.coins += (coinGains?.[p.userId] || 5);
+      user.totalCoinsCollected += (coinsCollected?.[p.userId] || 0);
       user.seasonXp += Math.floor(p.score / 2) + 5;
+
+      // XP kazandır
+      const xpGain = 10 + Math.floor(p.score * 1.5) + (p.userId === winnerId ? 25 : 0);
+      const leveledUp = addXp(user, xpGain);
       await user.save();
+
+      // Başarım kontrolü
+      await checkAchievements(user);
 
       // Görev ilerletme
       await updateQuests(p.userId, p.score, p.userId === winnerId);
