@@ -18,8 +18,13 @@ const privateLobbyMap = new Map();
 const spectatorMap = new Map();
 const botTimers = new Map();
 
-const BOT_NAMES = ['FlappyBot', 'BirdMaster', 'PipeDodger', 'SkyRunner', 'WingKing', 'FeatherPro'];
-const BOT_SKILL = { easy: { minScore: 3, maxScore: 12 }, medium: { minScore: 8, maxScore: 25 }, hard: { minScore: 15, maxScore: 50 } };
+const BOT_NAMES = [
+  'Ahmet', 'Mehmet', 'Ali', 'Mustafa', 'Emre', 'Burak', 'Cem', 'Kaan', 'Mert', 'Efe',
+  'Yusuf', 'Hakan', 'Onur', 'Berk', 'Deniz', 'Arda', 'Eren', 'Tolga', 'Serkan', 'Oğuz',
+  'Ayşe', 'Fatma', 'Zeynep', 'Elif', 'Selin', 'Merve', 'Esra', 'Nur', 'Büşra', 'Derya',
+  'Cansu', 'İrem', 'Gizem', 'Tuğçe', 'Başak', 'Defne', 'Eylül', 'Yağmur', 'Melis', 'Ebru',
+];
+const BOT_SKILL = { easy: { minScore: 10, maxScore: 30 }, medium: { minScore: 15, maxScore: 45 }, hard: { minScore: 25, maxScore: 70 } };
 
 function startBotPlayer(io, match, botId, difficulty) {
   const skill = BOT_SKILL[difficulty] || BOT_SKILL.medium;
@@ -29,6 +34,7 @@ function startBotPlayer(io, match, botId, difficulty) {
   let botVel = 0;
   const gravity = difficulty === 'easy' ? 0.28 : difficulty === 'hard' ? 0.45 : 0.35;
   const flapStr = difficulty === 'easy' ? -5.5 : difficulty === 'hard' ? -7.5 : -6.5;
+  const scoreMs = difficulty === 'easy' ? 1200 : difficulty === 'hard' ? 600 : 800;
 
   const physicsInterval = setInterval(() => {
     if (match.status !== 'playing' || !match.alive[botId]) {
@@ -39,8 +45,7 @@ function startBotPlayer(io, match, botId, difficulty) {
     botY += botVel;
     if (botY > 420) { botY = 420; botVel = 0; }
     if (botY < 20) { botY = 20; botVel = 0; }
-    // Random flap to stay mid-screen
-    if (botY > 200 + Math.random() * 120 || botVel > 2.5) {
+    if (botY > 180 + Math.random() * 140 || botVel > 2.5) {
       botVel = flapStr * (0.8 + Math.random() * 0.4);
     }
     io.to(match.id).emit('flappy_bot_pos', { odm: botId, y: Math.round(botY) });
@@ -55,7 +60,7 @@ function startBotPlayer(io, match, botId, difficulty) {
     }
     score += 1;
     match.scores[botId] = score;
-    io.to(match.id).emit('flappy_score_update', { userId: botId, username: match.players[botId]?.username || 'Bot', score });
+    io.to(match.id).emit('flappy_score_update', { userId: botId, username: match.players[botId]?.username || '?', score });
 
     if (score >= targetScore) {
       clearInterval(scoreInterval);
@@ -65,13 +70,13 @@ function startBotPlayer(io, match, botId, difficulty) {
       const aliveCount = Object.values(match.alive).filter(Boolean).length;
       io.to(match.id).emit('flappy_player_died', {
         userId: botId,
-        username: match.players[botId]?.username || 'Bot',
+        username: match.players[botId]?.username || '?',
         score,
         aliveCount,
       });
-      if (aliveCount <= 1) finishMatch(io, match);
+      if (aliveCount === 0) finishMatch(io, match);
     }
-  }, 800 + Math.floor(Math.random() * 400));
+  }, scoreMs + Math.floor(Math.random() * 400));
   botTimers.set(botId, { scoreInterval, physicsInterval });
 }
 
@@ -241,7 +246,7 @@ function setupFlappyHandlers(io, socket) {
       score: match.scores[currentUserId] || 0,
       aliveCount,
     });
-    if (aliveCount <= 1) {
+    if (aliveCount === 0) {
       finishMatch(io, match);
     }
   });
@@ -259,7 +264,7 @@ function setupFlappyHandlers(io, socket) {
         score: match.scores[currentUserId] || 0,
         aliveCount,
       });
-      if (aliveCount <= 1) {
+      if (aliveCount === 0) {
         finishMatch(io, match);
       }
     }
@@ -366,10 +371,10 @@ async function finishMatch(io, match) {
       botTimers.delete(uid);
     }
   }
-  const winnerId = Object.keys(match.alive).find((id) => match.alive[id]) || null;
   const leaderboard = Object.entries(match.scores)
     .map(([uid, s]) => ({ userId: uid, username: match.players[uid]?.username || '?', score: s }))
     .sort((a, b) => b.score - a.score);
+  const winnerId = leaderboard.length > 0 ? leaderboard[0].userId : null;
 
   const coinGains = {};
   for (let i = 0; i < leaderboard.length; i++) {
