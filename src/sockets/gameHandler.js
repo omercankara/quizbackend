@@ -22,6 +22,7 @@ const { isChatBanned } = require('../game/chatBan');
 const { generateDailyQuests, generateWeeklyQuests, getQuests, claimQuestReward } = require('../game/quests');
 const { getSeasonInfo, claimSeasonReward } = require('../game/seasons');
 const { setupDrawHandlers } = require('./drawHandler');
+const { setupFlappyHandlers } = require('./flappyHandler');
 
 const COSMETICS = {
   frames: [
@@ -198,6 +199,7 @@ function setupGameSocket(io) {
     let currentUsername = null;
 
     setupDrawHandlers(io, socket);
+    setupFlappyHandlers(io, socket);
 
     socket.on('register_user', async ({ userId, username }) => {
       currentUserId = userId;
