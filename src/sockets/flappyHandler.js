@@ -31,18 +31,15 @@ function startBotPlayer(io, match, botId, difficulty) {
   const targetScore = skill.minScore + Math.floor(Math.random() * (skill.maxScore - skill.minScore));
   let score = 0;
 
-  // Oyunla aynı fizik sabitleri
   const grav = difficulty === 'easy' ? 0.28 : difficulty === 'hard' ? 0.45 : 0.35;
   const flapStr = difficulty === 'easy' ? -5.5 : difficulty === 'hard' ? -7.5 : -6.5;
   const scoreMs = difficulty === 'easy' ? 1200 : difficulty === 'hard' ? 600 : 800;
-
-  // 50ms tick = ~3 oyun frame'i (oyun 16.67ms/frame ~60fps)
   const SUB_STEPS = 3;
 
-  let botY = 160 + Math.random() * 60;
+  let botY = 170 + Math.random() * 40;
   let botVel = 0;
-  let goalY = 130 + Math.random() * 100;
-  let nextGoalTime = Date.now() + 1500 + Math.random() * 1500;
+  let goalY = 150 + Math.random() * 80;
+  let nextGoalTime = Date.now() + 2000 + Math.random() * 1500;
 
   const physicsInterval = setInterval(() => {
     if (match.status !== 'playing' || !match.alive[botId]) {
@@ -51,14 +48,15 @@ function startBotPlayer(io, match, botId, difficulty) {
     }
 
     if (Date.now() > nextGoalTime) {
-      goalY = 80 + Math.random() * 200;
-      nextGoalTime = Date.now() + 1200 + Math.random() * 2000;
+      goalY = 140 + Math.random() * 120;
+      nextGoalTime = Date.now() + 1500 + Math.random() * 2000;
     }
 
-    // Flap kararı (tick başına 1 kez, ilk sub-step'te uygulanır)
+    // Tek flap ~55-60px yukarı taşır, bu yüzden hedefin 35px altında flap yaparak
+    // hedef etrafında +/-30px salınım elde ediyoruz
     let doFlap = false;
-    if (botY > goalY + 12 && botVel >= 0) doFlap = true;
-    if (botVel > 5) doFlap = true;
+    if (botY > goalY + 35 && botVel > 1.5) doFlap = true;
+    if (botVel > 7) doFlap = true;
 
     for (let i = 0; i < SUB_STEPS; i++) {
       if (doFlap && i === 0) {
@@ -69,8 +67,8 @@ function startBotPlayer(io, match, botId, difficulty) {
       botY += botVel;
     }
 
-    if (botY > 340) { botY = 340; botVel = 0; }
-    if (botY < 10) { botY = 10; botVel = Math.abs(botVel) * 0.2; }
+    if (botY > 330) { botY = 330; botVel = 0; }
+    if (botY < 30) { botY = 30; botVel = 2; }
 
     io.to(match.id).emit('flappy_bot_pos', { odm: botId, y: Math.round(botY) });
   }, 50);
